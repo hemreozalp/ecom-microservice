@@ -42,33 +42,34 @@ public class OrderService {
     }
 
     public OrderResponseDTO createOrder(OrderRequestDTO dto) {
-        // 1. Stok kontrolü için Product Service'e çağrı yap
+        // 1️⃣ Stok kontrolü için Product Service'e çağrı
         dto.items().forEach(item -> {
-            String url = "http://localhost:5001/api/v1/products/" + item.productId();
+            String url = "http://product-service:8080/api/v1/products/" + item.productId(); //localhost yerine prod service yazarak hata çözüldü
             var product = restTemplate.getForObject(url, Object.class);
             if (product == null) {
                 throw new RuntimeException("Product not found: " + item.productId());
             }
-            // TODO: product.stock alanı parse edilip item.quantity ile karşılaştırılabilir
         });
 
-        // 2. Sipariş oluştur
+        // 2️⃣ Siparişi oluştur
         Order order = OrderMapper.toEntity(dto);
         Order saved = orderRepository.save(order);
 
-        // 3. Event publish (Kafka’ya gönder)
-        List<OrderItemDTO> items = saved.getItems().stream()
+        // 3️⃣ Event oluştur (List<OrderItem> uyumlu)
+        List<OrderItemDTO> itemsDTO = saved.getItems().stream()
                 .map(i -> new OrderItemDTO(i.getProductId(), i.getQuantity(), i.getPrice()))
                 .collect(Collectors.toList());
 
         OrderCreatedEvent event = new OrderCreatedEvent(
                 saved.getId(),
-                items,
+                itemsDTO,
                 saved.getStatus()
         );
+
+        // 4️⃣ Kafka’ya publish
         orderEventProducer.sendOrderCreatedEvent(event);
 
-        // 4. DTO response döndür
+        // 5️⃣ Response DTO döndür
         return OrderMapper.toDTO(saved);
     }
 
