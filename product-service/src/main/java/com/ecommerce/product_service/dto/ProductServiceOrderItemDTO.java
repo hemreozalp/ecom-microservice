@@ -1,4 +1,9 @@
 package com.ecommerce.product_service.dto;
 
-public record ProductServiceOrderItemDTO() {
-}
+import java.util.UUID;
+
+public record ProductServiceOrderItemDTO(
+        UUID productId,
+        int quantity,
+        double price
+) {}
