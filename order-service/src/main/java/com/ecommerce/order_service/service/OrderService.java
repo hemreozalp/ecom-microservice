@@ -5,6 +5,8 @@ import com.ecommerce.order_service.kafka.OrderEventProducer;
 import com.ecommerce.order_service.mapper.OrderMapper;
 import com.ecommerce.order_service.model.Order;
 import com.ecommerce.order_service.repository.OrderRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -20,11 +22,15 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final RestTemplate restTemplate;
     private final OrderEventProducer orderEventProducer;
+    private final Counter ordersCreatedCounter;
+    private final Counter ordersFailedCounter;
 
-    public OrderService(OrderRepository orderRepository, RestTemplate restTemplate, OrderEventProducer orderEventProducer) {
+    public OrderService(OrderRepository orderRepository, RestTemplate restTemplate, OrderEventProducer orderEventProducer, MeterRegistry meterRegistry) {
         this.orderRepository = orderRepository;
         this.restTemplate = restTemplate;
         this.orderEventProducer = orderEventProducer;
+        this.ordersCreatedCounter = meterRegistry.counter("orders_created_total");
+        this.ordersFailedCounter = meterRegistry.counter("orders_failed_total");
     }
 
     public List<OrderResponseDTO> getAllOrders() {
@@ -41,18 +47,23 @@ public class OrderService {
     }
 
     public OrderResponseDTO createOrder(OrderRequestDTO dto) {
-        dto.items().forEach(item -> {
-            String url = "http://product-service:8080/api/v1/products/" + item.productId(); // when using kafka localhost:8080 can be a problem
-            ProductResponseDTO product = restTemplate.getForObject(url, ProductResponseDTO.class);
-            if (product == null) {
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND,
-                        "Product not found: " + item.productId());
-            }
-            if (product.stock() < item.quantity()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Insufficient stock for product: " + product.name());
-            }
-        });
+        try {
+            dto.items().forEach(item -> {
+                String url = "http://product-service:8080/api/v1/products/" + item.productId();
+                ProductResponseDTO product = restTemplate.getForObject(url, ProductResponseDTO.class);
+                if (product == null) {
+                    throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                            "Product not found: " + item.productId());
+                }
+                if (product.stock() < item.quantity()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Insufficient stock for product: " + product.name());
+                }
+            });
+        } catch (RuntimeException ex) {
+            ordersFailedCounter.increment();
+            throw ex;
+        }
 
         Order order = OrderMapper.toEntity(dto);
         order.setStatus("PENDING"); // default status
@@ -63,11 +74,13 @@ public class OrderService {
                 .collect(Collectors.toList());
 
         OrderCreatedEvent event = new OrderCreatedEvent(
+                saved.getUserId(),
                 saved.getId(),
                 itemsDTO,
                 saved.getStatus()
         );
         orderEventProducer.sendOrderCreatedEvent(event);
+        ordersCreatedCounter.increment();
 
         return OrderMapper.toDTO(saved);
     }
