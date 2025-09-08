@@ -25,6 +25,19 @@ public class Order {
     private List<OrderItem> items;
     private double totalPrice;
     private String status; // PENDING, COMPLETED, CANCELED
+
+    @Column(updatable = false)
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    @PrePersist
+    public void prePersist() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    public void preUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 }

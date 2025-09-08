@@ -3,6 +3,8 @@ package com.ecommerce.order_service.controller;
 import com.ecommerce.order_service.dto.OrderRequestDTO;
 import com.ecommerce.order_service.dto.OrderResponseDTO;
 import com.ecommerce.order_service.service.OrderService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -30,13 +32,13 @@ public class OrderController {
     }
 
     @PostMapping
-    public ResponseEntity<OrderResponseDTO> createOrder(@RequestBody OrderRequestDTO dto) {
+    public ResponseEntity<OrderResponseDTO> createOrder(@Valid @RequestBody OrderRequestDTO dto) {
         return ResponseEntity.ok(orderService.createOrder(dto));
     }
 
     @PutMapping("/{id}/status")
     public ResponseEntity<OrderResponseDTO> updateOrderStatus(@PathVariable UUID id,
-                                                              @RequestParam String status) {
+                                                              @RequestParam @NotBlank String status) {
         return ResponseEntity.ok(orderService.updateOrderStatus(id, status));
     }
 
